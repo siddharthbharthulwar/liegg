@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import torch
+import torch.nn as nn
 import sys
 import time
 
@@ -9,6 +10,26 @@ from torch.utils.data import TensorDataset, Subset, DataLoader
 
 from src.models import MLP, Standardize
 from src.liegg import polarization_matrix_2, symmetry_metrics
+
+def rotate_resample(img, G):
+    
+    # img: (1, 1, 28, 28)
+    # G: (2,2)
+    
+    # proc input image
+    img_in = img.cpu().data
+    
+    # wrap to affine transform
+    R = torch.zeros((2,3))
+    R[:2,:2] = G.cpu().data
+    
+    # sample grid
+    grid = nn.functional.affine_grid(R.unsqueeze(0), img_in.size())
+    
+    # resample img
+    img_out = nn.functional.grid_sample(img_in, grid)
+    
+    return img_out[0,0]
 
 def get_random_subset_bool_mask(tensor, num_samples):
     """Using boolean mask"""
@@ -53,7 +74,7 @@ def split_tensor_data(dataset, splits, seed=2022):
     return out_data
 
 
-model = MLP(in_dim = 64*64, out_dim=5, ch=128, num_nonlins=3)
+model = MLP(in_dim = 64*64, out_dim=4, ch=128, num_nonlins=3)
 optimizer = torch.optim.Adam(model.parameters(), lr = 3e-3, weight_decay=1e-4)
 loss = torch.nn.MSELoss()
 
@@ -63,10 +84,15 @@ path = '/home/sbharthulwar/thesis/dsprites/dsprites_ndarray_co1sh3sc6or40x32y32_
 data = np.load(path, allow_pickle=True, encoding='latin1')
 imgs = data["imgs"]
 latents_classes = data["latents_classes"]
+latents_values = data["latents_values"]
+
+print("latents values:", latents_values[0])
 
 latents_classes = torch.tensor(latents_classes)
 
-ysubset = torch.cat([latents_classes[:, :3], latents_classes[:, 4:]], dim=1)  
+# ysubset = torch.cat([latents_classes[:, :3], latents_classes[:, 4:]], dim=1)  
+ysubset = latents_classes[:, 2:]
+print("y subset shape: ", ysubset.shape)
 
 subset = imgs
 
@@ -94,9 +120,12 @@ dataloaders = {k:DataLoader(v,batch_size=min(bs,len(v)),shuffle=(k=='train'),
 dataloaders['Train'] = dataloaders['train']
 
 for (x_test, y_test) in dataloaders['test']:
+    print("x_test shape", x_test.shape)
+    print("y_test shape", y_test.shape)
     y_pred = model(x_test.float())
     after_train = loss(y_pred, y_test.float()) 
-    print('Test loss before Training' , after_train.item())
+
+losses = []
 
 for epoch in range(n_epochs):
     running_loss = 0
@@ -105,6 +134,7 @@ for epoch in range(n_epochs):
         outputs = model(inputs.float())
 
         loss_ = loss(outputs, labels.float())
+        losses.append(loss_.clone().detach())
         loss_.backward()
         optimizer.step()
 
@@ -119,40 +149,50 @@ for (x_test, y_test) in dataloaders['test']:
         y_pred = model(x_test.float())
         after_train = loss(y_pred, y_test.float()) 
 
+plt.plot(losses)
+plt.savefig("losses.png")
+plt.close()
+
 
 print("SUBSET FLOAT SHAPE", before.float().shape)
 
-pol = get_random_subset_bool_mask(before.float(), 2000)
+pol = get_random_subset_bool_mask(before.float(), 10000)
 
 E = polarization_matrix_2(model, pol)
 
 print(E.shape)
 if not E.any():
-    print("all zeros")
+    print("all zeros")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
 
 singular_values, symmetry_biases, generators = symmetry_metrics(E)
-
-print(generators)
 
 ################################################################################
 
 
-print('Symmetry variance: ', singular_values[-1].item())
-print('min Symmetry bias: ', symmetry_biases[-1].item())
+# print('Symmetry variance: ', singular_values[-1].item())
+# print('min Symmetry bias: ', symmetry_biases[-1].item())
 
-fig, ax = plt.subplots(1, 2, figsize=(11, 3))
+# fig, ax = plt.subplots(1, 2, figsize=(11, 3))
 
-ax[0].grid(axis='y')
-ax[0].plot(singular_values.data, color='black')
-ax[0].scatter(torch.arange(singular_values.shape[0]), singular_values.data, color='black', linewidths=.5)
-ax[0].set_yscale('log')
-ax[0].set_title('Polarization spectrum')
-ax[0].set_xlabel('i-th singular value')
+# ax[0].grid(axis='y')
+# ax[0].plot(singular_values.data, color='black')
+# ax[0].scatter(torch.arange(singular_values.shape[0]), singular_values.data, color='black', linewidths=.5)
+# ax[0].set_yscale('log')
+# ax[0].set_title('Polarization spectrum')
+# ax[0].set_xlabel('i-th singular value')
 
-ax[1].grid(axis='y')
-ax[1].plot(symmetry_biases.data, color='black')
-ax[1].scatter(torch.arange(symmetry_biases.shape[0]), symmetry_biases.data, color='black', linewidths=.5)
-ax[1].set_title('O(5) symmetry bias')
-ax[1].set_xlabel('i-th singular vector')
+# ax[1].grid(axis='y')
+# ax[1].plot(symmetry_biases.data, color='black')
+# ax[1].scatter(torch.arange(symmetry_biases.shape[0]), symmetry_biases.data, color='black', linewidths=.5)
+# ax[1].set_title('O(5) symmetry bias')
+# ax[1].set_xlabel('i-th singular vector')
 
-plt.savefig('figure.png')
+# plt.savefig('figure.png')
+
+img = before[1].float()
+plt.imsave("img.png", img)
+
+for index, generator in enumerate(generators):
+    img_r = rotate_resample(img.reshape(1, 1, *before[1].shape), generator)
+    plt.imsave("generator " + str(index) + ".png", img_r)
+

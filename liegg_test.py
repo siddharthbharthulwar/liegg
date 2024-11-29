@@ -96,7 +96,7 @@ data_X = data_X.reshape(data_X.shape[0], 28, 28)
 
 print("DATA X SHAPE", data_X.shape)
 
-E = polarization_matrix_2(trained_model, data_X)
+E = polarization_matrix_1(trained_model, data_X)
 
 # compute symmetry variance and bias
 singular_values, symmetry_biases, _ = symmetry_metrics(E)
